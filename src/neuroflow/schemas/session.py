@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from neuroflow.schemas.analysis import AnalysisResult
-from neuroflow.schemas.planning import AnalysisPlan, ResearchRequest
+from neuroflow.schemas.planning import AnalysisPlan, AnalysisStep, ResearchRequest
 
 
 class ApprovalDecision(BaseModel):
@@ -17,6 +17,10 @@ class ApprovalDecision(BaseModel):
     )
     feedback: str | None = Field(
         default=None, description="Optional researcher feedback or revision instructions"
+    )
+    modified_steps: list[AnalysisStep] | None = Field(
+        default=None,
+        description="Optional researcher-edited list of steps to replace proposed plan",
     )
     decided_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
