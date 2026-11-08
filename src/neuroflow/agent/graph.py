@@ -22,6 +22,7 @@ from neuroflow.agent.nodes import (
 )
 from neuroflow.agent.routing import (
     route_after_approval,
+    route_after_evaluation,
     route_after_planning,
     route_after_validation,
 )
@@ -85,7 +86,16 @@ def create_research_graph(
     )
 
     builder.add_edge("execute_analysis_plan", "evaluate_execution_results")
-    builder.add_edge("evaluate_execution_results", "synthesize_results")
+
+    builder.add_conditional_edges(
+        "evaluate_execution_results",
+        route_after_evaluation,
+        {
+            "human_approval": "human_approval",
+            "synthesize_results": "synthesize_results",
+        },
+    )
+
     builder.add_edge("synthesize_results", "persist_session")
     builder.add_edge("persist_session", END)
 
@@ -97,6 +107,7 @@ def run_research_session(
     graph: CompiledStateGraph,
     query: str,
     thread_id: str | None = None,
+    max_supplementary_rounds: int = 0,
 ) -> dict[str, Any]:
     """Initiate a research session thread on the compiled graph until approval pause or completion."""
     tid = thread_id or f"session_{uuid.uuid4().hex[:8]}"
@@ -108,6 +119,7 @@ def run_research_session(
         "approval_status": "pending",
         "iteration_count": 0,
         "max_iterations": 3,
+        "max_supplementary_rounds": max_supplementary_rounds,
     }
 
     result = graph.invoke(initial_state, config=config)

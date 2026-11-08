@@ -13,6 +13,13 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "langchain>=0.3.0",
+    "langchain-core>=0.3.0",
+    "langgraph>=0.2.0",
+    "langgraph-checkpoint-sqlite>=2.0.0",
+    "gradio>=5.0.0",
+    "plotly>=5.0.0",
 ]
 
 [project.optional-dependencies]

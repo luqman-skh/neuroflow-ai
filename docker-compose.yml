@@ -1,0 +1,19 @@
+services:
+  neuroflow-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: neuroflow-ai:latest
+    container_name: neuroflow-ai
+    ports:
+      - "7860:7860"
+    environment:
+      - LLM_PROVIDER=fake
+      - LLM_MODEL=mock-model
+      - LLM_TEMPERATURE=0.0
+      - GRADIO_SERVER_NAME=0.0.0.0
+      - GRADIO_SERVER_PORT=7860
+      - SQLITE_DB_PATH=/app/data/neuroflow.db
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

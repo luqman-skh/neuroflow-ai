@@ -30,3 +30,9 @@ class AgentState(TypedDict, total=False):
     status: str
     iteration_count: int
     max_iterations: int
+    follow_up_proposed: bool
+    follow_up_rationale: str | None
+    supplementary_rounds: int
+    max_supplementary_rounds: int
+    model_provider: str | None
+    model_name: str | None

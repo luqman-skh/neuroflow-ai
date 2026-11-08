@@ -19,7 +19,9 @@ from neuroflow.agent.graph import (
     run_research_session,
 )
 from neuroflow.agent.validator import validate_analysis_plan
+from neuroflow.config import get_settings
 from neuroflow.data.experiment_context import get_default_experiment_context
+from neuroflow.persistence.sessions import get_session_repository
 from neuroflow.schemas.planning import AnalysisPlan, AnalysisStep
 from neuroflow.schemas.session import ApprovalDecision
 from neuroflow.tools.registry import get_tool_registry
@@ -176,6 +178,38 @@ def create_app() -> gr.Blocks:
 
                 btn_export = gr.Button("💾 Export Full Synthesis Report")
                 export_file = gr.File(label="Downloaded Report", visible=False)
+
+            # ==============================================================
+            # TAB 4: Session History & Audit
+            # ==============================================================
+            with gr.Tab("4. Session History", id="tab_history"):
+                gr.Markdown("### 📜 Stored Research Sessions (SQLite Audit History)")
+                with gr.Row():
+                    search_input = gr.Textbox(
+                        label="Search Past Sessions",
+                        placeholder="Search by query keyword or session ID...",
+                        lines=1,
+                    )
+                    btn_search_sessions = gr.Button("🔍 Search")
+                    btn_refresh_sessions = gr.Button("🔄 Refresh List")
+
+                sessions_table = gr.Dataframe(
+                    headers=["Session ID", "Created At", "Status", "Research Query", "Tools Run"],
+                    datatype=["str", "str", "str", "str", "number"],
+                    interactive=False,
+                )
+
+                with gr.Row():
+                    selected_session_dropdown = gr.Dropdown(
+                        label="Select Session to Reopen & Inspect",
+                        choices=[],
+                        interactive=True,
+                    )
+                    btn_inspect_session = gr.Button("📂 Reopen & Inspect Session", variant="primary")
+
+                session_details_markdown = gr.Markdown(
+                    "*Select a session above to inspect its full execution history, tools run, and report.*"
+                )
 
         # ==============================================================
         # EVENT HANDLERS
@@ -538,13 +572,85 @@ def create_app() -> gr.Blocks:
             ],
         )
 
+        def handle_refresh_sessions(keyword: str = ""):
+            """Load session summaries from SQLite database."""
+            repo = get_session_repository()
+            if keyword and keyword.strip():
+                summaries = repo.search_sessions(keyword.strip())
+            else:
+                summaries = repo.list_sessions(limit=50)
+
+            data = []
+            s_ids = []
+            for s in summaries:
+                ts = s["created_at"][:19].replace("T", " ")
+                data.append([s["session_id"], ts, s["status"].upper(), s["query"], s["tool_count"]])
+                s_ids.append(s["session_id"])
+
+            return data, gr.update(choices=s_ids, value=s_ids[0] if s_ids else None)
+
+        btn_refresh_sessions.click(
+            handle_refresh_sessions,
+            inputs=[search_input],
+            outputs=[sessions_table, selected_session_dropdown],
+        )
+
+        btn_search_sessions.click(
+            handle_refresh_sessions,
+            inputs=[search_input],
+            outputs=[sessions_table, selected_session_dropdown],
+        )
+
+        def handle_inspect_session(session_id: str):
+            """Load full details of a saved session."""
+            if not session_id:
+                return "*No session selected.*"
+
+            repo = get_session_repository()
+            record = repo.get_session(session_id)
+            if not record:
+                return f"*Session '{session_id}' not found in database.*"
+
+            sess = record["session"]
+            plan = sess.plan
+            report = sess.final_report
+
+            md = [
+                f"## 📂 Reopened Session: `{sess.session_id}`",
+                f"- **Created At:** {sess.created_at} | **Status:** `{record['status'].upper()}`",
+                f"- **Model Metadata:** Provider = `{record['model_provider']}`, Model = `{record['model_name']}`",
+                f"- **Original Query:** \"{sess.request.query}\"",
+                f"- **Associated Experiment:** `{sess.request.experiment_id}`",
+                "",
+                "### 📋 Approved Plan Details",
+                format_plan_markdown(plan),
+                "",
+                "### 📜 Executed Operations & Audit Log",
+                format_execution_log(sess.execution_records),
+                "",
+                "### 📊 Executed Results",
+                format_results_markdown(record.get("results", {})),
+                "",
+                "### 📝 Final Synthesised Report",
+                format_report_markdown(report),
+            ]
+
+            return "\n".join(md)
+
+        btn_inspect_session.click(
+            handle_inspect_session,
+            inputs=[selected_session_dropdown],
+            outputs=[session_details_markdown],
+        )
+
     return demo
 
 
 def launch_ui() -> None:
     """Launch the Gradio interface server."""
+    cfg = get_settings()
     app = create_app()
-    app.launch(server_name="127.0.0.1", server_port=7860, share=False)
+    app.launch(server_name=cfg.gradio_server_name, server_port=cfg.gradio_server_port, share=False)
 
 
 if __name__ == "__main__":

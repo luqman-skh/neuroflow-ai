@@ -61,3 +61,13 @@ def route_after_approval(
         return "__end__"
 
     return "__end__"
+
+
+def route_after_evaluation(
+    state: AgentState,
+) -> Literal["human_approval", "synthesize_results"]:
+    """Route after results evaluation: if a justified follow-up is proposed, pause for researcher approval."""
+    if state.get("follow_up_proposed") is True:
+        # Strict requirement: Every supplementary round requires explicit human approval
+        return "human_approval"
+    return "synthesize_results"
