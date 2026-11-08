@@ -20,6 +20,8 @@ from neuroflow.schemas.experiment import (
 from neuroflow.schemas.planning import (
     AnalysisPlan,
     AnalysisStep,
+    ClarificationNeeded,
+    PlanningResult,
     ResearchRequest,
 )
 from neuroflow.schemas.session import (
@@ -45,6 +47,8 @@ __all__ = [
     "VariableDefinition",
     "AnalysisPlan",
     "AnalysisStep",
+    "ClarificationNeeded",
+    "PlanningResult",
     "ResearchRequest",
     "ApprovalDecision",
     "ExecutionRecord",

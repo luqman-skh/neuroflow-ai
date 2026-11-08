@@ -1,7 +1,7 @@
 """Schemas for research requests, analysis planning, and plan steps."""
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
@@ -58,4 +58,52 @@ class AnalysisPlan(BaseModel):
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         description="Timestamp when the plan was generated",
+    )
+
+
+class ClarificationNeeded(BaseModel):
+    """Structured response when a user request is ambiguous, invalid, or requires clarification."""
+
+    needs_clarification: bool = Field(
+        default=True, description="Indicator that the planner requires more information"
+    )
+    question: str = Field(
+        ..., description="Specific clarifying question posed to the researcher"
+    )
+    options: list[str] = Field(
+        default_factory=list,
+        description="Suggested choices or options the researcher can pick from",
+    )
+    missing_variables: list[str] = Field(
+        default_factory=list,
+        description="Variables requested that are not present in the experiment data dictionary",
+    )
+    unsupported_features: list[str] = Field(
+        default_factory=list,
+        description="Features or analyses requested that are outside the allowed tool catalogue",
+    )
+    suggested_alternatives: list[str] = Field(
+        default_factory=list,
+        description="Recommended supported tools or variables that can be used instead",
+    )
+
+
+class PlanningResult(BaseModel):
+    """Top-level envelope returned by the AnalysisPlanner."""
+
+    status: Literal["plan_generated", "clarification_needed", "rejected"] = Field(
+        ..., description="Outcome of the planning attempt"
+    )
+    plan: AnalysisPlan | None = Field(
+        default=None, description="The validated plan, if successfully generated"
+    )
+    clarification: ClarificationNeeded | None = Field(
+        default=None, description="Clarification details if status is clarification_needed or rejected"
+    )
+    validation_errors: list[str] = Field(
+        default_factory=list,
+        description="Any schema or parameter validation errors encountered",
+    )
+    raw_model_response: str | None = Field(
+        default=None, description="Raw output from the LLM for debugging and traceability"
     )
