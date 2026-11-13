@@ -70,6 +70,37 @@ flowchart TD
     Persistence --> UI
 ```
 
+### LangGraph Node Connections
+
+The workflow below shows the nodes registered by `create_research_graph` and the conditional routes between them:
+
+```mermaid
+flowchart TD
+    START([START]) --> understand_request[understand_request]
+    understand_request --> generate_analysis_plan[generate_analysis_plan]
+
+    generate_analysis_plan -- "Plan ready" --> validate_analysis_plan[validate_analysis_plan]
+    generate_analysis_plan -- "Rejected; retries remain" --> generate_analysis_plan
+    generate_analysis_plan -- "Clarification needed or retry limit reached" --> END([END])
+
+    validate_analysis_plan -- "Valid" --> human_approval[human_approval<br/>interrupt for researcher]
+    validate_analysis_plan -- "Invalid; retries remain" --> generate_analysis_plan
+    validate_analysis_plan -- "Invalid; retry limit reached" --> END
+
+    human_approval -- "Approved" --> execute_analysis_plan[execute_analysis_plan]
+    human_approval -- "Modified" --> validate_analysis_plan
+    human_approval -- "Rejected with feedback; retries remain" --> generate_analysis_plan
+    human_approval -- "Rejected without retry, or other decision" --> END
+
+    execute_analysis_plan --> evaluate_execution_results[evaluate_execution_results]
+    evaluate_execution_results -- "Follow-up proposed" --> human_approval
+    evaluate_execution_results -- "No follow-up" --> synthesize_results[synthesize_results]
+    synthesize_results --> persist_session[persist_session]
+    persist_session --> END
+```
+
+Planning and validation retries are bounded by the iteration limit. Modified plans are validated again, and any proposed follow-up analysis returns to the researcher approval gate before execution.
+
 ### LangGraph Workflow & State Lifecycle
 
 ```mermaid
