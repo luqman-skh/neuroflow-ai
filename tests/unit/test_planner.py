@@ -3,7 +3,7 @@
 import pytest
 from langchain_core.messages import HumanMessage
 
-from neuroflow.agent.llm import FakePlannerChatModel, get_chat_model
+from neuroflow.agent.llm import FakePlannerChatModel, OpenRouterChatModel, get_chat_model
 from neuroflow.agent.planner import AnalysisPlanner
 from neuroflow.agent.prompts import (
     build_planner_system_prompt,
@@ -35,6 +35,85 @@ class TestLLMFactory:
         # Pydantic validates literal, but let's test invalid string if bypassed or constructed
         with pytest.raises(Exception):
             Settings(LLM_PROVIDER="unsupported_provider")  # type: ignore
+
+    def test_openrouter_factory_and_missing_key(self) -> None:
+        cfg = Settings(LLM_PROVIDER="openrouter", OPENROUTER_API_KEY="test-key-123")
+        model = get_chat_model(cfg)
+        assert isinstance(model, OpenRouterChatModel)
+        assert model.api_key == "test-key-123"
+
+        cfg_no_key = Settings(LLM_PROVIDER="openrouter", OPENROUTER_API_KEY="")
+        with pytest.raises(ValueError, match="OPENROUTER_API_KEY"):
+            get_chat_model(cfg_no_key)
+
+    def test_openrouter_invocation_with_reasoning(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+        mock_called = {}
+
+        class MockResponse:
+            status_code = 200
+
+            def json(self):
+                return {
+                    "id": "gen-1234",
+                    "model": "google/gemma-4-26b-a4b-it:free",
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": '{"summary": "Test Plan", "steps": []}',
+                                "reasoning_details": "Thinking step by step about memory tasks...",
+                            }
+                        }
+                    ],
+                    "usage": {"total_tokens": 42},
+                }
+
+        def mock_post(url, headers, data, timeout):
+            import json
+            mock_called["url"] = url
+            mock_called["headers"] = headers
+            mock_called["payload"] = json.loads(data)
+            return MockResponse()
+
+        import requests
+        monkeypatch.setattr(requests, "post", mock_post)
+
+        model = OpenRouterChatModel(
+            model_name="google/gemma-4-26b-a4b-it:free",
+            api_key="sk-test-key",
+            enable_reasoning=True,
+        )
+
+        messages = [
+            SystemMessage(content="You are an analysis planner."),
+            HumanMessage(content="Compare memory accuracy between groups."),
+            AIMessage(
+                content="Preliminary check",
+                additional_kwargs={"reasoning_details": "Initial thought chain"},
+            ),
+            HumanMessage(content="Proceed with full plan."),
+        ]
+
+        result = model.invoke(messages)
+
+        assert mock_called["url"] == "https://openrouter.ai/api/v1/chat/completions"
+        assert mock_called["headers"]["Authorization"] == "Bearer sk-test-key"
+        assert mock_called["payload"]["model"] == "google/gemma-4-26b-a4b-it:free"
+        assert mock_called["payload"]["reasoning"] == {"enabled": True}
+
+        # Check preserved reasoning_details in assistant message passed back
+        msg_list = mock_called["payload"]["messages"]
+        assert len(msg_list) == 4
+        assert msg_list[0] == {"role": "system", "content": "You are an analysis planner."}
+        assert msg_list[2]["role"] == "assistant"
+        assert msg_list[2]["content"] == "Preliminary check"
+        assert msg_list[2]["reasoning_details"] == "Initial thought chain"
+
+        # Check returned AIMessage preserves reasoning_details
+        assert result.content == '{"summary": "Test Plan", "steps": []}'
+        assert result.additional_kwargs.get("reasoning_details") == "Thinking step by step about memory tasks..."
 
 
 class TestPlannerPrompts:

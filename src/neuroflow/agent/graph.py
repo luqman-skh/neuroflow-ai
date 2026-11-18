@@ -108,6 +108,8 @@ def run_research_session(
     query: str,
     thread_id: str | None = None,
     max_supplementary_rounds: int = 0,
+    model_provider: str | None = None,
+    model_name: str | None = None,
 ) -> dict[str, Any]:
     """Initiate a research session thread on the compiled graph until approval pause or completion."""
     tid = thread_id or f"session_{uuid.uuid4().hex[:8]}"
@@ -120,6 +122,8 @@ def run_research_session(
         "iteration_count": 0,
         "max_iterations": 3,
         "max_supplementary_rounds": max_supplementary_rounds,
+        "model_provider": model_provider,
+        "model_name": model_name,
     }
 
     result = graph.invoke(initial_state, config=config)

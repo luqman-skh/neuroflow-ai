@@ -31,10 +31,21 @@ class AnalysisPlanner:
         registry: ToolRegistry | None = None,
         context: ExperimentContext | None = None,
     ) -> None:
-        self.llm = llm or get_chat_model()
+        self._custom_llm = llm
         self.registry = registry or get_tool_registry()
         self.context = context or get_default_experiment_context()
         self.system_prompt = build_planner_system_prompt(self.context, self.registry)
+
+    @property
+    def llm(self) -> BaseChatModel:
+        """Dynamically resolve the active chat model from configuration."""
+        if self._custom_llm is not None:
+            return self._custom_llm
+        return get_chat_model()
+
+    @llm.setter
+    def llm(self, value: BaseChatModel | None) -> None:
+        self._custom_llm = value
 
     def plan(self, request: ResearchRequest | str) -> PlanningResult:
         """Generate a structured analysis plan or clarification from a research question.

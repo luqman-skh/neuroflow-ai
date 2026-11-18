@@ -37,6 +37,7 @@ from neuroflow.ui.components import (
 
 def create_app() -> gr.Blocks:
     """Build and return the Gradio Blocks UI application."""
+    cfg = get_settings()
     context = get_default_experiment_context()
     registry = get_tool_registry()
 
@@ -72,9 +73,26 @@ def create_app() -> gr.Blocks:
 **Study:** {context.title} (`{context.experiment_id}`)  
 **Description:** {context.description}  
 **Cohorts:** {', '.join(context.groups)} | **Tasks:** {', '.join(context.task_types)} | **N = {context.total_participants}**  
-**Available Variables:** {var_list}
+**Available Variables:** {var_list}  
+**Active LLM Engine:** `{cfg.llm_provider}` (`{cfg.llm_model}`)
 """
                     )
+
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        provider_dropdown = gr.Dropdown(
+                            label="LLM Provider",
+                            choices=["openrouter", "fake", "ollama", "openai", "anthropic"],
+                            value=cfg.llm_provider,
+                            interactive=True,
+                        )
+                    with gr.Column(scale=3):
+                        model_input = gr.Textbox(
+                            label="Model Identifier",
+                            value=cfg.llm_model,
+                            placeholder="e.g. google/gemma-4-26b-a4b-it:free",
+                            interactive=True,
+                        )
 
                 with gr.Row():
                     with gr.Column(scale=4):
@@ -242,7 +260,7 @@ def create_app() -> gr.Blocks:
             outputs=query_input,
         )
 
-        def handle_submit(query: str, thread_id: str):
+        def handle_submit(query: str, thread_id: str, provider: str, model_name: str):
             """Submit query to LangGraph workflow up to the approval gate."""
             if not query or not query.strip():
                 return (
@@ -255,8 +273,14 @@ def create_app() -> gr.Blocks:
                     gr.update(selected="tab_workspace"),
                 )
 
-            # Invoke graph thread
-            res_state = run_research_session(graph=graph, query=query.strip(), thread_id=thread_id)
+            # Invoke graph thread with selected provider and model
+            res_state = run_research_session(
+                graph=graph,
+                query=query.strip(),
+                thread_id=thread_id,
+                model_provider=provider,
+                model_name=model_name,
+            )
             status = res_state.get("status")
 
             # Check if clarification was needed
@@ -307,7 +331,7 @@ def create_app() -> gr.Blocks:
 
         btn_submit.click(
             handle_submit,
-            inputs=[query_input, state_thread_id],
+            inputs=[query_input, state_thread_id, provider_dropdown, model_input],
             outputs=[
                 status_box,
                 clarification_box,

@@ -5,7 +5,7 @@ import re
 from typing import Any, List, Optional
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from neuroflow.config import Settings, get_settings
@@ -300,12 +300,141 @@ class FakePlannerChatModel(BaseChatModel):
         return "fake-planner"
 
 
+class OpenRouterChatModel(BaseChatModel):
+    """Chat model client for OpenRouter AI API.
+
+    Supports OpenAI-compatible chat completions with reasoning preservation,
+    custom headers, and model parameters as specified in OpenRouter documentation.
+    """
+
+    model_name: str = "google/gemma-4-26b-a4b-it:free"
+    api_key: str
+    base_url: str = "https://openrouter.ai/api/v1"
+    temperature: float = 0.0
+    enable_reasoning: bool = True
+    timeout: float = 60.0
+
+    @property
+    def _llm_type(self) -> str:
+        return "openrouter"
+
+    def _generate(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        import requests
+
+        formatted_messages: list[dict[str, Any]] = []
+        for m in messages:
+            if isinstance(m, SystemMessage):
+                formatted_messages.append({"role": "system", "content": str(m.content)})
+            elif isinstance(m, HumanMessage):
+                formatted_messages.append({"role": "user", "content": str(m.content)})
+            elif isinstance(m, AIMessage):
+                msg_payload: dict[str, Any] = {"role": "assistant", "content": str(m.content)}
+                if m.additional_kwargs.get("reasoning_details"):
+                    msg_payload["reasoning_details"] = m.additional_kwargs["reasoning_details"]
+                formatted_messages.append(msg_payload)
+            else:
+                formatted_messages.append({
+                    "role": getattr(m, "type", "user"),
+                    "content": str(m.content),
+                })
+
+        payload: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": formatted_messages,
+            "temperature": self.temperature,
+        }
+        if self.enable_reasoning:
+            payload["reasoning"] = {"enabled": True}
+        if stop:
+            payload["stop"] = stop
+
+        for k, v in kwargs.items():
+            if k not in payload:
+                payload[k] = v
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/NeuroFlow/NeuroFlow",
+            "X-Title": "NeuroFlow AI",
+        }
+
+        url = f"{self.base_url.rstrip('/')}/chat/completions"
+
+        try:
+            resp = requests.post(
+                url=url,
+                headers=headers,
+                data=json.dumps(payload),
+                timeout=self.timeout,
+            )
+        except Exception as e:
+            raise RuntimeError(f"Failed to connect to OpenRouter at {url}: {e}") from e
+
+        if resp.status_code != 200:
+            try:
+                err_json = resp.json()
+                err_msg = err_json.get("error", {}).get("message", resp.text)
+            except Exception:
+                err_msg = resp.text
+            raise RuntimeError(f"OpenRouter API error ({resp.status_code}): {err_msg}")
+
+        data = resp.json()
+        choices = data.get("choices", [])
+        if not choices:
+            raise RuntimeError(f"OpenRouter returned empty choices: {data}")
+
+        choice_msg = choices[0].get("message", {})
+        content = choice_msg.get("content") or ""
+        reasoning_details = choice_msg.get("reasoning_details")
+
+        additional_kwargs: dict[str, Any] = {}
+        if reasoning_details:
+            additional_kwargs["reasoning_details"] = reasoning_details
+
+        ai_message = AIMessage(
+            content=content,
+            additional_kwargs=additional_kwargs,
+            response_metadata={
+                "model": data.get("model", self.model_name),
+                "usage": data.get("usage", {}),
+                "id": data.get("id"),
+            },
+        )
+        return ChatResult(generations=[ChatGeneration(message=ai_message)])
+
+
 def get_chat_model(cfg: Settings | None = None) -> BaseChatModel:
     """Factory creating the configured LangChain chat model."""
     config = cfg or get_settings()
 
     if config.llm_provider == "fake":
         return FakePlannerChatModel(model_name=config.llm_model)
+
+    if config.llm_provider == "openrouter":
+        api_key = config.openrouter_api_key
+        if not api_key:
+            raise ValueError(
+                "OpenRouter provider requires 'OPENROUTER_API_KEY' to be set in environment or .env"
+            )
+        model = (
+            config.llm_model
+            if config.llm_model and config.llm_model != "mock-model"
+            else "google/gemma-4-26b-a4b-it:free"
+        )
+        return OpenRouterChatModel(
+            model_name=model,
+            api_key=api_key,
+            base_url=config.openrouter_base_url,
+            temperature=config.llm_temperature,
+            enable_reasoning=config.openrouter_reasoning,
+        )
 
     if config.llm_provider == "ollama":
         try:

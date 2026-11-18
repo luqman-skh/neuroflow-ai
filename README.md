@@ -199,6 +199,18 @@ GRADIO_SERVER_NAME=127.0.0.1
 GRADIO_SERVER_PORT=7860
 ```
 
+#### Using OpenRouter (e.g. Gemma with Reasoning)
+
+To run live planning with OpenRouter:
+
+```env
+LLM_PROVIDER=openrouter
+LLM_MODEL=google/gemma-4-26b-a4b-it:free
+OPENROUTER_API_KEY=sk-or-v1-...
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_REASONING=true
+```
+
 ### 4. Run the Test Suite
 
 Verify that all 98 unit, graph, UI, evaluation, and end-to-end tests pass:

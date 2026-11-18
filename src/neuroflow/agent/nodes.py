@@ -102,7 +102,28 @@ def understand_request_node(state: AgentState) -> dict[str, Any]:
 
 def generate_analysis_plan_node(state: AgentState) -> dict[str, Any]:
     """Select registered tools and generate a structured analysis plan."""
-    planner = _default_node_context.planner
+    context = get_node_context()
+    planner = context.planner
+
+    # Support dynamic per-request provider or model overrides
+    req_provider = state.get("model_provider")
+    req_model = state.get("model_name")
+    if req_provider or req_model:
+        current_cfg = get_settings()
+        target_provider = req_provider or current_cfg.llm_provider
+        target_model = req_model or current_cfg.llm_model
+        if target_provider != current_cfg.llm_provider or target_model != current_cfg.llm_model:
+            from neuroflow.agent.llm import get_chat_model
+            dynamic_cfg = current_cfg.model_copy(update={
+                "llm_provider": target_provider,
+                "llm_model": target_model,
+            })
+            planner = AnalysisPlanner(
+                llm=get_chat_model(dynamic_cfg),
+                registry=context.registry,
+                context=context.context,
+            )
+
     req = state["request"]
     feedback = state.get("feedback")
     iteration = state.get("iteration_count", 0) + 1
